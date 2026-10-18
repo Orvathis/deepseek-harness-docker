@@ -42,15 +42,22 @@ fi
 # usermod -u already retargets files in the home dir; this just aligns the group.
 [ -d /home/node ] && chown node:node /home/node 2>/dev/null || true
 
-# DSH creates this file itself and validates its mode in the same step, so a host fs that
-# forces a mode on newly created files fails the very first start: make sure the file
-# exists and is owner-only before dsh starts. Creating it alone is not enough — `: >`
-# honours the umask, so it lands at 644.
-if [ ! -f /data/.credentials.yaml ]; then
-  : > /data/.credentials.yaml
-  chown "$PUID:$PGID" /data/.credentials.yaml 2>/dev/null || true
-fi
+# DSH validates the mode of this file and refuses to run when it is readable by others
+# (dsh-credentials-local: assertOwnerOnly) — a missing file is fine, a permissive one is
+# fatal. DSH creates it at 0600 itself, but some host filesystems hand a permissive mode
+# to every file created there (e.g. 705), so it is wrong the moment DSH replaces the file.
+# This one-shot chmod covers the leftover case: a file left at 705 by a killed container
+# fails the boot-time check, which runs before the watcher below can react.
 chmod 600 /data/.credentials.yaml 2>/dev/null || true
+
+# DSH writes it with a temp file and a rename (writeFileAtomic), so watching the directory
+# is enough to catch every replacement — and unlike a polling loop it costs no CPU when idle.
+inotifywait -m -q -e create -e close_write -e moved_to --format '%f' /data 2>&1 |
+  while read -r name; do
+    [ "$name" = ".credentials.yaml" ] \
+      && chmod 600 /data/.credentials.yaml 2>/dev/null \
+      || true
+  done &
 
 # Advertise the host-side URL instead of the container IP; the first authority wins.
 # HOST_PORT is the host-side port (compose publishes with it); a port already

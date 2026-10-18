@@ -13,7 +13,7 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       git curl wget unzip procps less ripgrep jq openssh-client tmux sudo \
-      python3 python3-pip python3-venv build-essential; \
+      python3 python3-pip python3-venv build-essential inotify-tools; \
     rm -rf /var/lib/apt/lists/*
 
 # npm >=11.16 skips install scripts by default; native deps (node-pty) need an explicit allow-list.
