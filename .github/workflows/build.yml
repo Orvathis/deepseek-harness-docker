@@ -102,8 +102,8 @@ jobs:
             ${{ env.IMAGE }}:${{ needs.check.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
+          provenance: false
+          sbom: false
 
   smoke:
     needs: [check, build]
