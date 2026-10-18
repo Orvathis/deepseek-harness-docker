@@ -21,11 +21,13 @@ services:
     container_name: dsh-harness
     restart: always
     ports:
-      - "3080:3080"
+      - "${HOST_PORT:-3080}:3080"
     volumes:
       - ./data:/data
     environment:
-      TRUSTED_HOST: ${TRUSTED_HOST}
+      TRUSTED_HOST: ${TRUSTED_HOST:-192.168.1.10}
+      TZ: ${TZ:-Asia/Shanghai}
+      HOST_PORT: ${HOST_PORT:-3080}
 ```
 
 ```sh
@@ -38,12 +40,14 @@ docker compose up -d
 
 | 变量 | 值 | 说明 |
 | --- | --- | --- |
-| `TRUSTED_HOST` | 必填；无默认值；示例 `192.168.1.10` | 浏览器访问用的 authority；逗号分隔可写多个（IP 和域名），省略端口匹配任意端口；仅宿主回环访问时写 `localhost`；为空则容器退出、`/api` 全 403 |
+| `TRUSTED_HOST` | 镜像无默认（必填）；示例值 `192.168.1.10` | 浏览器访问用的 authority；逗号分隔可写多个（IP 和域名），省略端口匹配任意端口；仅宿主回环访问时写 `localhost`；为空则容器退出、`/api` 全 403 |
+| `TZ` | 镜像默认 `Etc/UTC`；示例值 `Asia/Shanghai` | 容器时区；镜像已内置 tzdata |
+| `HOST_PORT` | 默认 `3080`；同时用于 compose 端口映射 | 宿主机侧端口，也用于日志里打印的访问 URL；容器内固定监听 3080 |
 
 ## 首次鉴权（必做一次）
 
 - 取 token：`docker compose logs dsh | grep -o 'token=[^& ]*'`（PowerShell 用 `Select-String 'token='`）
-- 打开 `http://<宿主IP>:<宿主机端口>/?token=<T>`，如 `http://192.168.1.10:3080/?token=xxxxxxxx`——用宿主地址，别用日志里的容器 IP；之后直接访问同一地址，cookie 30 天有效、不续期
+- 打开日志里打印的 URL（形如 `http://192.168.1.10:3080/?token=xxxxxxxx`）；之后直接访问同一地址，cookie 30 天有效、不续期
 - 重取时机：cookie 失效后（换 IP / 端口 / 域名、清 cookie 或换浏览器）。容器重启会换新 token、作废旧 token，但已签发的 cookie 仍有效，无需重登
 
 ## tag 说明

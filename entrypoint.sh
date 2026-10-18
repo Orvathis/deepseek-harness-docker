@@ -15,7 +15,7 @@ if [ -z "$IP" ]; then
   exit 1
 fi
 
-# TRUSTED_HOST: the only custom var (browser-visible authority); required.
+# TRUSTED_HOST: the browser-visible authority; required.
 if [ -z "${TRUSTED_HOST:-}" ]; then
   echo "entrypoint: TRUSTED_HOST is required; without it every browser /api request is rejected with 403." >&2
   echo "entrypoint: e.g. TRUSTED_HOST=192.168.1.10; comma-separated for several hosts; omit the port to match any port." >&2
@@ -23,12 +23,22 @@ if [ -z "${TRUSTED_HOST:-}" ]; then
   exit 1
 fi
 
-# Map to official flags; no --public-url (keep DSH's default announcement).
-set -- --host "$IP" --no-open
+# Advertise the host-side URL instead of the container IP; the first authority wins.
+# HOST_PORT is the host-side port (compose publishes with it); a port already
+# present in the authority is kept as-is.
+HEAD="$(printf '%s' "$TRUSTED_HOST" | cut -d, -f1 | tr -d ' ')"
+case "$HEAD" in
+  *:*) PUBLIC="http://${HEAD}" ;;
+  *)   PUBLIC="http://${HEAD}:${HOST_PORT:-3080}" ;;
+esac
+
+# Map to official flags: --trusted-host admits the browser authority, --public-url
+# only advertises it; both derive from TRUSTED_HOST, so they cannot disagree.
+set -- --host "$IP" --no-open --public-url "$PUBLIC"
 for host in $(printf '%s' "$TRUSTED_HOST" | tr ',' ' '); do
   set -- "$@" --trusted-host "$host"
 done
 
 # Foreground exec so DSH stdout (launch token) lands in docker logs; default port 3080.
-echo "entrypoint: starting dsh web on ${IP}:3080 (trusted-host: ${TRUSTED_HOST})"
+echo "entrypoint: starting dsh web on ${IP}:3080 (trusted-host: ${TRUSTED_HOST}; public-url: ${PUBLIC})"
 exec dsh web "$@"

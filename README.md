@@ -21,11 +21,13 @@ services:
     container_name: dsh-harness
     restart: always
     ports:
-      - "3080:3080"
+      - "${HOST_PORT:-3080}:3080"
     volumes:
       - ./data:/data
     environment:
-      TRUSTED_HOST: ${TRUSTED_HOST}
+      TRUSTED_HOST: ${TRUSTED_HOST:-192.168.1.10}
+      TZ: ${TZ:-Asia/Shanghai}
+      HOST_PORT: ${HOST_PORT:-3080}
 ```
 
 ```sh
@@ -38,12 +40,14 @@ Update: `docker compose pull && docker compose up -d`.
 
 | Variable | Value | Description |
 | --- | --- | --- |
-| `TRUSTED_HOST` | Required; no default; example `192.168.1.10` | The authority used for browser access; comma-separated for multiple entries (IPs and domains); omitting the port matches any port; use `localhost` when only host loopback access is needed; if empty the container exits and all `/api` requests return 403 |
+| `TRUSTED_HOST` | No image default (required); example value `192.168.1.10` | The authority used for browser access; comma-separated for multiple entries (IPs and domains); omitting the port matches any port; use `localhost` when only host loopback access is needed; if empty the container exits and all `/api` requests return 403 |
+| `TZ` | Image default `Etc/UTC`; example value `Asia/Shanghai` | Container timezone; tzdata is bundled in the image |
+| `HOST_PORT` | Default `3080`; also used for the compose port mapping | Host-side port, also used for the access URL printed in the logs; the container always listens on 3080 |
 
 ## First-time authentication (do this once)
 
 - Get the token: `docker compose logs dsh | grep -o 'token=[^& ]*'` (on PowerShell use `Select-String 'token='`)
-- Open `http://<host IP>:<host port>/?token=<T>`, e.g. `http://192.168.1.10:3080/?token=xxxxxxxx` — use the host address, not the container IP from the logs; afterwards visit the same address directly, the cookie stays valid for 30 days and does not renew
+- Open the URL printed in the logs (e.g. `http://192.168.1.10:3080/?token=xxxxxxxx`); afterwards visit the same address, the cookie stays valid for 30 days and does not renew
 - When to re-fetch: after the cookie expires (changed IP / port / domain, cleared cookies, or a different browser). Restarting the container issues a new token and invalidates the old one, but already-issued cookies remain valid, so no re-login is needed
 
 ## Tags
