@@ -18,7 +18,7 @@
 services:
   dsh:
     image: ghcr.io/orvathis/deepseek-harness-docker:latest
-    container_name: dsh-harness
+    container_name: deepseek-harness
     restart: always
     ports:
       - "${HOST_PORT:-3080}:3080"
