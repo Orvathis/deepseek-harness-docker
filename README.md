@@ -12,7 +12,7 @@ Docker image for the official [DeepSeek Harness](https://github.com/deepseek-ai/
 
 ## Quick start
 
-Save the following as `docker-compose.yml` and create a `.env` in the same directory with `TRUSTED_HOST=<host IP>`:
+Save the following as `docker-compose.yml`, create a `.env` in the same directory with `TRUSTED_HOST=<host IP>`, and create a `./workspace` directory (point new workspaces in the Web UI at `/workspace`):
 
 ```yaml
 services:
@@ -24,6 +24,7 @@ services:
       - "${HOST_PORT:-3080}:3080"
     volumes:
       - ./data:/data
+      - ./workspace:/workspace
     environment:
       TRUSTED_HOST: ${TRUSTED_HOST:-192.168.1.10}
       TZ: ${TZ:-Asia/Shanghai}
@@ -43,6 +44,7 @@ Update: `docker compose pull && docker compose up -d`.
 | `TRUSTED_HOST` | No image default (required); example value `192.168.1.10` | The authority used for browser access; comma-separated for multiple entries (IPs and domains); omitting the port matches any port; use `localhost` when only host loopback access is needed; if empty the container exits and all `/api` requests return 403 |
 | `TZ` | Image default `Etc/UTC`; example value `Asia/Shanghai` | Container timezone; tzdata is bundled in the image |
 | `HOST_PORT` | Default `3080`; also used for the compose port mapping | Host-side port, also used for the access URL printed in the logs; the container always listens on 3080 |
+| `PUID` / `PGID` | Default `1000` | User the agent runs as; owns the files in `./data` and `./workspace` — set these to your host account's uid/gid |
 
 ## First-time authentication (do this once)
 

@@ -12,7 +12,7 @@
 
 ## 快速开始
 
-存成 `docker-compose.yml`，同目录建 `.env` 填 `TRUSTED_HOST=<宿主 IP>`：
+存成 `docker-compose.yml`，同目录建 `.env` 填 `TRUSTED_HOST=<宿主 IP>`、建 `./workspace` 目录（Web UI 里新建工作区时指向 `/workspace`）：
 
 ```yaml
 services:
@@ -24,6 +24,7 @@ services:
       - "${HOST_PORT:-3080}:3080"
     volumes:
       - ./data:/data
+      - ./workspace:/workspace
     environment:
       TRUSTED_HOST: ${TRUSTED_HOST:-192.168.1.10}
       TZ: ${TZ:-Asia/Shanghai}
@@ -43,6 +44,7 @@ docker compose up -d
 | `TRUSTED_HOST` | 镜像无默认（必填）；示例值 `192.168.1.10` | 浏览器访问用的 authority；逗号分隔可写多个（IP 和域名），省略端口匹配任意端口；仅宿主回环访问时写 `localhost`；为空则容器退出、`/api` 全 403 |
 | `TZ` | 镜像默认 `Etc/UTC`；示例值 `Asia/Shanghai` | 容器时区；镜像已内置 tzdata |
 | `HOST_PORT` | 默认 `3080`；同时用于 compose 端口映射 | 宿主机侧端口，也用于日志里打印的访问 URL；容器内固定监听 3080 |
+| `PUID` / `PGID` | 默认 `1000` | agent 运行用户；决定 `./data` 与 `./workspace` 里文件的属主，设成宿主账号的 uid/gid 即可 |
 
 ## 首次鉴权（必做一次）
 

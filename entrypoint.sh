@@ -23,6 +23,25 @@ if [ -z "${TRUSTED_HOST:-}" ]; then
   exit 1
 fi
 
+# Host-mounted dirs may be owned by root; align them with the runtime user, then drop
+# to it. PUID/PGID default to 1000 so files stay manageable outside the container.
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
+[ "$(id -u node)" = "$PUID" ] || usermod -o -u "$PUID" node
+[ "$(id -g node)" = "$PGID" ] || groupmod -o -g "$PGID" node
+# Walk all of /data only when its owner is stale (first start, or PUID/PGID changed);
+# afterwards every file is written by this user, so the walk would be pure overhead.
+if [ "$(stat -c %u /data 2>/dev/null)" != "$PUID" ]; then
+  chown -R node:node /data 2>/dev/null || true
+else
+  # Cheap net for the rare case where the tree is fine but a DSH entry was replaced
+  # from outside (e.g. restored from a backup): no walk, just the known entries.
+  chown node:node /data/.credentials.yaml /data/.anonymous-user-id /data/profiles /data/storages 2>/dev/null || true
+fi
+[ -d /workspace ] && chown node:node /workspace 2>/dev/null || true
+# usermod -u already retargets files in the home dir; this just aligns the group.
+[ -d /home/node ] && chown node:node /home/node 2>/dev/null || true
+
 # Some host filesystems force 0755 on everything created under /data (btrfs user dirs,
 # shares), which trips DSH's own "credentials readable beyond owner" check. Restore the
 # modes DSH itself sets; chmod is a no-op where the filesystem ignores it.
@@ -53,5 +72,6 @@ for host in $(printf '%s' "$TRUSTED_HOST" | tr ',' ' '); do
 done
 
 # Foreground exec so DSH stdout (launch token) lands in docker logs; default port 3080.
-echo "entrypoint: starting dsh web on ${IP}:3080 (trusted-host: ${TRUSTED_HOST}; public-url: ${PUBLIC})"
-exec dsh web "$@"
+export HOME=/home/node
+echo "entrypoint: starting dsh web on ${IP}:3080 (trusted-host: ${TRUSTED_HOST}; public-url: ${PUBLIC}; user: ${PUID}:${PGID})"
+exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups dsh web "$@"

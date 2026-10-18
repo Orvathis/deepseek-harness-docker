@@ -12,7 +12,7 @@ LABEL org.opencontainers.image.title="deepseek-harness-docker" \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      git curl wget unzip procps less ripgrep jq openssh-client tmux \
+      git curl wget unzip procps less ripgrep jq openssh-client tmux sudo \
       python3 python3-pip python3-venv build-essential; \
     rm -rf /var/lib/apt/lists/*
 
@@ -34,11 +34,24 @@ RUN set -eux; \
       if [ -f "$pkg/$f" ]; then cp "$pkg/$f" /app/licenses/; else echo "note: $pkg/$f not found, skipping"; fi; \
     done
 
+# The base image ships user node (uid/gid 1000): run the agent as it so files written to
+# the mapped ./data and ./workspace belong to the host user, and grant it passwordless
+# sudo so the agent can still install system packages. The entrypoint remaps uid/gid
+# from PUID/PGID (default 1000:1000).
+RUN set -eux; \
+    printf 'node ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/node; \
+    chmod 0440 /etc/sudoers.d/node; \
+    mkdir -p /workspace; \
+    chown node:node /workspace
+
 # DSH_* belongs to upstream; no custom DSH_* vars here.
 ENV DSH_HOME=/data
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Default cwd for the agent; the compose sample maps the host's ./workspace here.
+WORKDIR /workspace
 
 EXPOSE 3080
 VOLUME ["/data"]
