@@ -46,6 +46,10 @@ RUN set -eux; \
 
 # DSH_* belongs to upstream; no custom DSH_* vars here.
 ENV DSH_HOME=/data
+# Keep the shared agent configuration root (skills/, AGENTS.md) in the mapped data
+# directory, so it does not follow HOME into the workspace. A subdirectory, so it
+# does not overlap DSH_HOME's own skill root at /data/skills.
+ENV DSH_AGENTS_HOME=/data/.agents
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

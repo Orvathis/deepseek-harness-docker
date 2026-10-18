@@ -76,6 +76,8 @@ for host in $(printf '%s' "$TRUSTED_HOST" | tr ',' ' '); do
 done
 
 # Foreground exec so DSH stdout (launch token) lands in docker logs; default port 3080.
-export HOME=/home/node
-echo "entrypoint: starting dsh web on ${IP}:3080 (trusted-host: ${TRUSTED_HOST}; public-url: ${PUBLIC}; user: ${PUID}:${PGID})"
+# HOME is the mapped workspace: the console's directory picker opens at homedir(), and the
+# agent's `~` resolves into files the host can see.
+export HOME=/workspace
+echo "entrypoint: starting dsh web on ${IP}:3080 (trusted-host: ${TRUSTED_HOST}; public-url: ${PUBLIC}; user: ${PUID}:${PGID}; home: ${HOME})"
 exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups dsh web "$@"
