@@ -1,0 +1,10 @@
+.git
+.gitignore
+.github
+.trae
+data
+README*.md
+
+.env
+*.key
+*.pem

@@ -1,0 +1,6 @@
+data/
+.trae/
+
+.env
+*.key
+*.pem

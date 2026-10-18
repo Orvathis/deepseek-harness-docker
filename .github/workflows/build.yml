@@ -1,0 +1,161 @@
+name: build
+
+# Builds only when the upstream version changes; Dockerfile/entrypoint edits need workflow_dispatch.
+on:
+  schedule:
+    - cron: '0 17 * * *'      # UTC 17:00 = 01:00 Beijing
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: dsh-image-build
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/orvathis/deepseek-harness-docker
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      exists: ${{ steps.exists.outputs.exists }}
+    steps:
+      - name: Resolve the latest upstream version
+        id: version
+        run: |
+          set -euo pipefail
+          npm i -g semver >/dev/null 2>&1
+          # dist-tags.latest lags behind next/alpha; take the max semver instead.
+          # Compare with the semver package: sort -V breaks semver ordering.
+          VERSION=$(npm view @deepseek-ai/dsh dist-tags --json | jq -r 'values[]' \
+            | node -e 'const s=require("semver");const v=require("fs").readFileSync(0,"utf8").split(/\s+/).filter(Boolean);console.log(s.rsort(v)[0])')
+          test -n "$VERSION"
+          echo "upstream latest: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether the tag already exists on GHCR
+        id: exists
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          if docker buildx imagetools inspect "${IMAGE}:${VERSION}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${IMAGE}:${VERSION} already exists, skipping build"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${IMAGE}:${VERSION} not found, building"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            DSH_VERSION=${{ needs.check.outputs.version }}
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.check.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+  smoke:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Run the container and verify version + auth flow
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE}:${VERSION}"
+          dump_and_cleanup() {
+            echo "===== docker logs dsh-smoke ====="
+            docker logs dsh-smoke 2>&1 || true
+            docker rm -f dsh-smoke >/dev/null 2>&1 || true
+          }
+          trap dump_and_cleanup EXIT
+
+          docker run -d --name dsh-smoke -p 3080:3080 -e TRUSTED_HOST=localhost "$IMAGE"
+
+          # 1) image dsh version must match upstream
+          GOT=$(docker exec dsh-smoke dsh --version | tr -d '\r')
+          echo "dsh --version: $GOT"
+          [ "$GOT" = "$VERSION" ] || { echo "::error::version mismatch got=$GOT want=$VERSION"; exit 1; }
+
+          # 2) wait for 401 on / without a token
+          CODE=""
+          for _ in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/ || true)
+            [ "$CODE" = "401" ] && break
+            sleep 2
+          done
+          echo "no-token GET / -> $CODE"
+          [ "$CODE" = "401" ] || { echo "::error::expected 401, got $CODE"; exit 1; }
+
+          # 3) extract the launch token from the logs
+          TOKEN=$(docker logs dsh-smoke 2>&1 | grep -o 'token=[^& ]*' | tail -n1 | cut -d= -f2)
+          [ -n "$TOKEN" ] || { echo "::error::could not extract a token from docker logs"; exit 1; }
+          echo "launch token captured"
+
+          # 4) token -> session cookie (303 + Set-Cookie)
+          JAR=$(mktemp)
+          CODE=$(curl -s -o /dev/null -c "$JAR" -w '%{http_code}' "http://127.0.0.1:3080/?token=$TOKEN")
+          echo "GET /?token= -> $CODE"
+          [ "$CODE" = "303" ] || { echo "::error::expected 303, got $CODE"; exit 1; }
+          [ -s "$JAR" ] || { echo "::error::no session cookie received"; exit 1; }
+
+          # 5) with cookie -> 200
+          CODE=$(curl -s -o /dev/null -b "$JAR" -w '%{http_code}' http://127.0.0.1:3080/)
+          echo "cookie GET / -> $CODE"
+          [ "$CODE" = "200" ] || { echo "::error::expected 200, got $CODE"; exit 1; }
+
+          echo "::notice::smoke passed: ${IMAGE}"
+
+  promote:
+    needs: [check, smoke]
+    if: needs.check.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Point :latest at the verified version
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${VERSION}"
+          echo "::notice::${IMAGE}:latest -> ${VERSION}"
