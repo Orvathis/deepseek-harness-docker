@@ -1,6 +1,7 @@
 name: build
 
-# Builds only when the upstream version changes; Dockerfile/entrypoint edits need workflow_dispatch.
+# Builds when the upstream version changes, or on any manual run (workflow_dispatch), so
+# Dockerfile/entrypoint edits can be rebuilt onto the current version tag.
 on:
   schedule:
     - cron: '0 17 * * *'      # UTC 17:00 = 01:00 Beijing
@@ -71,7 +72,8 @@ jobs:
 
   build:
     needs: check
-    if: needs.check.outputs.exists == 'false'
+    # A manual run rebuilds even when the version tag already exists on GHCR.
+    if: needs.check.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -162,7 +164,8 @@ jobs:
 
   promote:
     needs: [check, smoke]
-    if: needs.check.outputs.exists == 'false'
+    # Runs whenever smoke passed, whether from a fresh build or a forced rebuild.
+    if: needs.smoke.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Log in to GHCR
