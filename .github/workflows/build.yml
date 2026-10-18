@@ -31,8 +31,9 @@ jobs:
           npm i -g semver >/dev/null 2>&1
           # dist-tags.latest lags behind next/alpha; take the max semver instead.
           # Compare with the semver package: sort -V breaks semver ordering.
+          # npm -g installs outside node's default require path; point NODE_PATH at it.
           VERSION=$(npm view @deepseek-ai/dsh dist-tags --json | jq -r 'values[]' \
-            | node -e 'const s=require("semver");const v=require("fs").readFileSync(0,"utf8").split(/\s+/).filter(Boolean);console.log(s.rsort(v)[0])')
+            | NODE_PATH="$(npm root -g)" node -e 'const s=require("semver");const v=require("fs").readFileSync(0,"utf8").split(/\s+/).filter(Boolean);console.log(s.rsort(v)[0])')
           test -n "$VERSION"
           echo "upstream latest: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
