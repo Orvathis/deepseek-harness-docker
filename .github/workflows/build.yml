@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -23,6 +23,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       exists: ${{ steps.exists.outputs.exists }}
+      released: ${{ steps.released.outputs.released }}
     steps:
       - name: Resolve the latest upstream version
         id: version
@@ -51,6 +52,21 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "::notice::${IMAGE}:${VERSION} not found, building"
+          fi
+
+      - name: Check whether a GitHub release already exists
+        id: released
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::release v${VERSION} already exists"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release v${VERSION} not found"
           fi
 
   build:
@@ -160,3 +176,37 @@ jobs:
           set -euo pipefail
           docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${VERSION}"
           echo "::notice::${IMAGE}:latest -> ${VERSION}"
+
+  release:
+    needs: [check, smoke]
+    # Run for the image this run just verified, and for one that already exists (smoke skipped).
+    if: always() && needs.check.outputs.released == 'false' && (needs.smoke.result == 'success' || needs.check.outputs.exists == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release for the verified version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          # A -rc/-alpha suffix marks a pre-release.
+          PRE=""
+          case "$VERSION" in *-*) PRE="--prerelease" ;; esac
+          NOTES=$(mktemp)
+          cat > "$NOTES" <<EOF
+          Upstream @deepseek-ai/dsh ${VERSION}
+          Release notes: https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v${VERSION}
+
+          Image: ghcr.io/orvathis/deepseek-harness-docker:${VERSION} (also :latest)
+          Platform: linux/amd64
+
+          Update:
+
+              docker compose pull && docker compose up -d
+          EOF
+          gh release create "v${VERSION}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "v${VERSION}" \
+            --notes-file "$NOTES" \
+            $PRE
+          echo "::notice::release v${VERSION} published"
