@@ -42,18 +42,15 @@ fi
 # usermod -u already retargets files in the home dir; this just aligns the group.
 [ -d /home/node ] && chown node:node /home/node 2>/dev/null || true
 
-# Some host filesystems force 0755 on everything created under /data (btrfs user dirs,
-# shares), which trips DSH's own "credentials readable beyond owner" check. Restore the
-# modes DSH itself sets; chmod is a no-op where the filesystem ignores it.
-if [ -f /data/.credentials.yaml ]; then
-  chmod 600 /data/.credentials.yaml 2>/dev/null || true
+# DSH creates this file itself and validates its mode in the same step, so a host fs that
+# forces a mode on newly created files fails the very first start: make sure the file
+# exists and is owner-only before dsh starts. Creating it alone is not enough — `: >`
+# honours the umask, so it lands at 644.
+if [ ! -f /data/.credentials.yaml ]; then
+  : > /data/.credentials.yaml
+  chown "$PUID:$PGID" /data/.credentials.yaml 2>/dev/null || true
 fi
-if [ -d /data/storages ]; then
-  chmod 700 /data/storages 2>/dev/null || true
-  if [ -f /data/storages/workspace.json ]; then
-    chmod 600 /data/storages/workspace.json 2>/dev/null || true
-  fi
-fi
+chmod 600 /data/.credentials.yaml 2>/dev/null || true
 
 # Advertise the host-side URL instead of the container IP; the first authority wins.
 # HOST_PORT is the host-side port (compose publishes with it); a port already
