@@ -38,7 +38,7 @@ else
   # from outside (e.g. restored from a backup): no walk, just the known entries.
   chown node:node /data/.credentials.yaml /data/.anonymous-user-id /data/profiles /data/storages 2>/dev/null || true
 fi
-[ -d /workspace ] && chown node:node /workspace 2>/dev/null || true
+[ -d /dsh ] && chown node:node /dsh 2>/dev/null || true
 # usermod -u already retargets files in the home dir; this just aligns the group.
 [ -d /home/node ] && chown node:node /home/node 2>/dev/null || true
 
@@ -76,8 +76,8 @@ for host in $(printf '%s' "$TRUSTED_HOST" | tr ',' ' '); do
 done
 
 # Foreground exec so DSH stdout (launch token) lands in docker logs; default port 3080.
-# HOME is the mapped workspace: the console's directory picker opens at homedir(), and the
-# agent's `~` resolves into files the host can see.
-export HOME=/workspace
+# HOME is the mapped /dsh (also the cwd): the console's directory picker opens at
+# homedir(), and the agent's `~` resolves into files the host can see.
+export HOME=/dsh
 echo "entrypoint: starting dsh web on ${IP}:3080 (trusted-host: ${TRUSTED_HOST}; public-url: ${PUBLIC}; user: ${PUID}:${PGID}; home: ${HOME})"
 exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups dsh web "$@"
