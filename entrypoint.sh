@@ -23,6 +23,19 @@ if [ -z "${TRUSTED_HOST:-}" ]; then
   exit 1
 fi
 
+# Some host filesystems force 0755 on everything created under /data (btrfs user dirs,
+# shares), which trips DSH's own "credentials readable beyond owner" check. Restore the
+# modes DSH itself sets; chmod is a no-op where the filesystem ignores it.
+if [ -f /data/.credentials.yaml ]; then
+  chmod 600 /data/.credentials.yaml 2>/dev/null || true
+fi
+if [ -d /data/storages ]; then
+  chmod 700 /data/storages 2>/dev/null || true
+  if [ -f /data/storages/workspace.json ]; then
+    chmod 600 /data/storages/workspace.json 2>/dev/null || true
+  fi
+fi
+
 # Advertise the host-side URL instead of the container IP; the first authority wins.
 # HOST_PORT is the host-side port (compose publishes with it); a port already
 # present in the authority is kept as-is.
